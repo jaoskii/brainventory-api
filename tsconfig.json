@@ -13,7 +13,12 @@
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
-    "ignoreDeprecations": "6.0",
+    "paths": {
+      "@prisma/adapter-mariadb": ["deps/node_modules/@prisma/adapter-mariadb"],
+      "mariadb": ["deps/node_modules/mariadb"],
+      "mariadb/*": ["deps/node_modules/mariadb/*"]
+    },
+    "ignoreDeprecations": "5.0",
     "incremental": true,
     "skipLibCheck": true,
     "strictNullChecks": true,

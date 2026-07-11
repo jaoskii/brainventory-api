@@ -9,5 +9,70 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Stockcard {
+  id            Int              @id @default(autoincrement())
+  barcode       String?          @db.VarChar(191)
+  description   String?          @db.Text
+  defaultUom    String?          @db.VarChar(50)
+  model         String?          @db.VarChar(191)
+  className     String?          @map("class") @db.VarChar(191)
+  brand         String?          @db.VarChar(191)
+  storeLocation String?          @db.VarChar(191)
+  size          String?          @db.VarChar(191)
+  category      String?          @db.VarChar(191)
+  groupName     String?          @map("group") @db.VarChar(191)
+  itemRem       String?          @db.Text
+  daysToExpiry  Int?
+  maximum       Decimal?         @db.Decimal(18, 4)
+  minimum       Decimal?         @db.Decimal(18, 4)
+  inactive      Boolean          @default(false)
+  imported      Boolean          @default(false)
+  assets        String?          @db.VarChar(191)
+  liabilities   String?          @db.VarChar(191)
+  revenue       String?          @db.VarChar(191)
+  expense       String?          @db.VarChar(191)
+  isActive      Boolean          @default(true)
+  isLocked      Boolean          @default(false)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  uoms          Uom[]
+  prices        StockcardPrice[]
+
+  @@map("stockcard")
+}
+
+model Uom {
+  id     Int       @id @default(autoincrement())
+  itemId Int       @map("itemid")
+  item   Stockcard @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  uom    String    @db.VarChar(50)
+  factor Decimal?  @db.Decimal(18, 4)
+  amt    Decimal?  @db.Decimal(18, 4)
+  kg     Decimal?  @db.Decimal(18, 4)
+  desc   String?   @map("desc") @db.Text
+
+  @@index([itemId])
+  @@map("uom")
+}
+
+model StockcardPrice {
+  id       Int       @id @default(autoincrement())
+  itemId   Int       @map("itemid")
+  item     Stockcard @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  pricegrp String    @db.VarChar(50)
+  price    Decimal?  @db.Decimal(18, 4)
+
+  @@index([itemId])
+  @@map("stockcard_prices")
 }
