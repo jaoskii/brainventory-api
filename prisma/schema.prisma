@@ -20,35 +20,120 @@ model User {
   updatedAt DateTime @updatedAt
 }
 
-model Stockcard {
-  id            Int              @id @default(autoincrement())
-  barcode       String?          @db.VarChar(191)
-  description   String?          @db.Text
-  defaultUom    String?          @db.VarChar(50)
-  model         String?          @db.VarChar(191)
-  className     String?          @map("class") @db.VarChar(191)
-  brand         String?          @db.VarChar(191)
-  storeLocation String?          @db.VarChar(191)
-  size          String?          @db.VarChar(191)
-  category      String?          @db.VarChar(191)
-  groupName     String?          @map("group") @db.VarChar(191)
-  itemRem       String?          @db.Text
-  daysToExpiry  Int?
-  maximum       Decimal?         @db.Decimal(18, 4)
-  minimum       Decimal?         @db.Decimal(18, 4)
-  inactive      Boolean          @default(false)
-  imported      Boolean          @default(false)
-  assets        String?          @db.VarChar(191)
-  liabilities   String?          @db.VarChar(191)
-  revenue       String?          @db.VarChar(191)
-  expense       String?          @db.VarChar(191)
-  isActive      Boolean          @default(true)
-  isLocked      Boolean          @default(false)
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
-  uoms          Uom[]
-  prices        StockcardPrice[]
+model StockcardBrand {
+  id          Int         @id @default(autoincrement())
+  description String?     @db.VarChar(191)
+  remarks     String?     @db.Text
+  stockcards  Stockcard[]
 
+  @@map("stockcard_brand")
+}
+
+model StockcardModel {
+  id          Int         @id @default(autoincrement())
+  description String?     @db.VarChar(191)
+  remarks     String?     @db.Text
+  stockcards  Stockcard[]
+
+  @@map("stockcard_model")
+}
+
+model StockcardClass {
+  id          Int         @id @default(autoincrement())
+  description String?     @db.VarChar(191)
+  remarks     String?     @db.Text
+  stockcards  Stockcard[]
+
+  @@map("stockcard_class")
+}
+
+model StockcardLocation {
+  id          Int         @id @default(autoincrement())
+  description String?     @db.VarChar(191)
+  remarks     String?     @db.Text
+  stockcards  Stockcard[]
+
+  @@map("stockcard_location")
+}
+
+model StockcardSize {
+  id          Int         @id @default(autoincrement())
+  description String?     @db.VarChar(191)
+  remarks     String?     @db.Text
+  stockcards  Stockcard[]
+
+  @@map("stockcard_size")
+}
+
+model StockcardCategory {
+  id          Int         @id @default(autoincrement())
+  description String?     @db.VarChar(191)
+  remarks     String?     @db.Text
+  stockcards  Stockcard[]
+
+  @@map("stockcard_category")
+}
+
+model StockcardGroup {
+  id          Int         @id @default(autoincrement())
+  description String?     @db.VarChar(191)
+  remarks     String?     @db.Text
+  stockcards  Stockcard[]
+
+  @@map("stockcard_group")
+}
+
+model Stockcard {
+  id             Int                @id @default(autoincrement())
+  barcode        String?            @db.VarChar(191)
+  description    String?            @db.Text
+  defaultUom     String?            @db.VarChar(50)
+  brandId        Int?               @map("brand_id")
+  brand          StockcardBrand?    @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  modelId        Int?               @map("model_id")
+  stockcardModel StockcardModel?    @relation(fields: [modelId], references: [id], onDelete: SetNull)
+  classId        Int?               @map("class_id")
+  stockcardClass StockcardClass?    @relation(fields: [classId], references: [id], onDelete: SetNull)
+  locationId     Int?               @map("location_id")
+  location       StockcardLocation? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  sizeId         Int?               @map("size_id")
+  size           StockcardSize?     @relation(fields: [sizeId], references: [id], onDelete: SetNull)
+  categoryId     Int?               @map("category_id")
+  category       StockcardCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  groupId        Int?               @map("group_id")
+  stockcardGroup StockcardGroup?    @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  itemRem        String?            @db.Text
+  daysToExpiry   Int?
+  maximum        Decimal?           @db.Decimal(18, 4)
+  minimum        Decimal?           @db.Decimal(18, 4)
+  inactive       Boolean            @default(false)
+  imported       Boolean            @default(false)
+  assets         String?            @db.VarChar(191)
+  assetsId       Int?               @map("assets_id")
+  liabilities    String?            @db.VarChar(191)
+  liabilitiesId  Int?               @map("liabilities_id")
+  revenue        String?            @db.VarChar(191)
+  revenueId      Int?               @map("revenue_id")
+  expense        String?            @db.VarChar(191)
+  expenseId      Int?               @map("expense_id")
+  isActive       Boolean            @default(true)
+  isLocked       Boolean            @default(false)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  uoms           Uom[]
+  prices         StockcardPrice[]
+
+  @@index([brandId])
+  @@index([modelId])
+  @@index([classId])
+  @@index([locationId])
+  @@index([sizeId])
+  @@index([categoryId])
+  @@index([groupId])
+  @@index([assetsId])
+  @@index([liabilitiesId])
+  @@index([revenueId])
+  @@index([expenseId])
   @@map("stockcard")
 }
 
@@ -72,7 +157,26 @@ model StockcardPrice {
   item     Stockcard @relation(fields: [itemId], references: [id], onDelete: Cascade)
   pricegrp String    @db.VarChar(50)
   price    Decimal?  @db.Decimal(18, 4)
+  remarks  String?   @db.Text
 
   @@index([itemId])
   @@map("stockcard_prices")
+}
+
+model Coa {
+  id          Int     @id @default(autoincrement())
+  code        String  @unique @db.VarChar(191)
+  description String? @db.Text
+  level       Int?
+  alias       String? @db.VarChar(191)
+  parentCode  String? @map("parent_code") @db.VarChar(191)
+  category    String? @db.VarChar(50)
+
+  parent   Coa?  @relation("CoaTree", fields: [parentCode], references: [code], onDelete: Restrict, onUpdate: Cascade)
+  children Coa[] @relation("CoaTree")
+
+  @@index([parentCode])
+  @@index([category])
+  @@index([level])
+  @@map("coa")
 }

@@ -43,6 +43,11 @@ export class StockcardController {
     );
   }
 
+  @Get('barcode/:barcode')
+  findByBarcode(@Param('barcode') barcode: string) {
+    return this.stockcardService.findByBarcode(barcode);
+  }
+
   @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.stockcardService.findOne(id);

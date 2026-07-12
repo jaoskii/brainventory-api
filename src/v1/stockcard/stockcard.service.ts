@@ -13,18 +13,21 @@ import { UpdatePriceDto } from './dto/update-price.dto';
 import { UpdateStockcardDto } from './dto/update-stockcard.dto';
 import { UpdateTaggingDto } from './dto/update-tagging.dto';
 import { UpdateUomDto } from './dto/update-uom.dto';
+import { CodegenService } from '../codegen/codegen.service';
+import { SubfieldsService } from './subfields/subfields.service';
+import { SUBFIELD_FK_FIELDS, SubfieldType } from './subfields/subfields.types';
 
 const STOCKCARD_SCALAR_FIELDS = [
   'barcode',
   'description',
   'defaultUom',
-  'model',
-  'className',
-  'brand',
-  'storeLocation',
-  'size',
-  'category',
-  'groupName',
+  'brandId',
+  'modelId',
+  'classId',
+  'locationId',
+  'sizeId',
+  'categoryId',
+  'groupId',
   'itemRem',
   'daysToExpiry',
   'maximum',
@@ -32,41 +35,65 @@ const STOCKCARD_SCALAR_FIELDS = [
   'inactive',
   'imported',
   'assets',
+  'assetsId',
   'liabilities',
+  'liabilitiesId',
   'revenue',
+  'revenueId',
   'expense',
+  'expenseId',
   'isActive',
 ] as const;
 
 const TAGGING_FIELDS = [
-  'category',
-  'groupName',
-  'className',
-  'brand',
-  'model',
-  'size',
-  'storeLocation',
+  'categoryId',
+  'groupId',
+  'classId',
+  'brandId',
+  'modelId',
+  'sizeId',
+  'locationId',
 ] as const;
 
-const STOCKCARD_INCLUDE = { uoms: true, prices: true } as const;
+const STOCKCARD_INCLUDE = {
+  uoms: true,
+  prices: true,
+  brand: true,
+  stockcardModel: true,
+  stockcardClass: true,
+  location: true,
+  size: true,
+  category: true,
+  stockcardGroup: true,
+} as const;
+
+const SUBFIELD_TYPE_BY_FK: Record<string, SubfieldType> = Object.fromEntries(
+  Object.entries(SUBFIELD_FK_FIELDS).map(([type, fk]) => [fk, type as SubfieldType]),
+);
 
 @Injectable()
 export class StockcardService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly subfieldsService: SubfieldsService,
+    private readonly codegenService: CodegenService,
+  ) {}
 
   async create(dto: CreateStockcardDto) {
     this.validateUoms(dto.uoms);
     this.validatePrices(dto.prices);
+    await this.validateSubfieldIds(dto);
 
     const data = this.buildScalarFields(dto) as Prisma.StockcardCreateInput;
+    const prices = this.buildDefaultPriceRows(dto.prices);
 
     if (dto.uoms?.length) {
       data.uoms = { create: dto.uoms.map((uom) => this.buildUomCreateData(uom)) };
     }
 
-    if (dto.prices?.length) {
+    if (prices.length) {
       data.prices = {
-        create: dto.prices.map((price) => this.buildPriceCreateData(price)),
+        create: prices.map((price) => this.buildPriceCreateData(price)),
       };
     }
 
@@ -86,8 +113,8 @@ export class StockcardService {
           OR: [
             { barcode: { contains: search } },
             { description: { contains: search } },
-            { brand: { contains: search } },
-            { category: { contains: search } },
+            { brand: { description: { contains: search } } },
+            { category: { description: { contains: search } } },
           ],
         }
       : {};
@@ -127,10 +154,25 @@ export class StockcardService {
     return stockcard;
   }
 
+  async findByBarcode(barcode: string) {
+    const normalized = barcode.trim();
+    if (!normalized) {
+      throw new BadRequestException('Barcode is required');
+    }
+
+    const stockcard = await this.prisma.stockcard.findFirst({
+      where: { barcode: normalized },
+      include: STOCKCARD_INCLUDE,
+    });
+
+    return stockcard ?? null;
+  }
+
   async update(id: number, dto: UpdateStockcardDto) {
     await this.assertNotLocked(id);
     this.validateUoms(dto.uoms);
     this.validatePrices(dto.prices);
+    await this.validateSubfieldIds(dto);
 
     const { uoms, prices, ...rest } = dto;
     const data = this.buildScalarFields(rest) as Prisma.StockcardUpdateInput;
@@ -204,6 +246,7 @@ export class StockcardService {
 
   async updateTagging(id: number, dto: UpdateTaggingDto) {
     await this.assertNotLocked(id);
+    await this.validateSubfieldIds(dto);
 
     const data = this.buildScalarFields(dto) as Prisma.StockcardUpdateInput;
 
@@ -232,10 +275,21 @@ export class StockcardService {
     this.validateUoms([dto]);
     await this.findOne(stockcardId);
 
+    const uomName = dto.uom.trim();
+    const factor = this.parseRequiredFactor(dto.factor, { allowOne: false });
+
+    await this.assertUomNameAvailable(stockcardId, uomName);
+    await this.assertUomFactorAvailable(stockcardId, factor);
+
     return this.prisma.uom.create({
       data: {
         itemId: stockcardId,
-        ...this.buildUomCreateData(dto),
+        ...this.buildUomCreateData({
+          ...dto,
+          uom: uomName,
+          factor,
+          desc: dto.desc?.trim() || undefined,
+        }),
       },
     });
   }
@@ -244,9 +298,28 @@ export class StockcardService {
     await this.assertNotLocked(stockcardId);
     await this.assertUomBelongsToStockcard(stockcardId, uomId);
 
+    const data: UpdateUomDto = { ...dto };
+
+    if (dto.uom !== undefined) {
+      if (typeof dto.uom !== 'string' || !dto.uom.trim()) {
+        throw new BadRequestException('uom is required');
+      }
+      data.uom = dto.uom.trim();
+      await this.assertUomNameAvailable(stockcardId, data.uom, uomId);
+    }
+
+    if (dto.factor !== undefined) {
+      data.factor = this.parseRequiredFactor(dto.factor, { allowOne: false });
+      await this.assertUomFactorAvailable(stockcardId, data.factor, uomId);
+    }
+
+    if (typeof dto.desc === 'string') {
+      data.desc = dto.desc.trim() || undefined;
+    }
+
     return this.prisma.uom.update({
       where: { id: uomId },
-      data: this.buildUomUpdateData(dto),
+      data: this.buildUomUpdateData(data),
     });
   }
 
@@ -365,6 +438,71 @@ export class StockcardService {
     }
   }
 
+  private parseRequiredFactor(
+    value: number | string | undefined,
+    options: { allowOne: boolean },
+  ): number {
+    if (value === undefined || value === null || value === '') {
+      throw new BadRequestException('factor is required');
+    }
+
+    const factor = typeof value === 'number' ? value : Number(String(value).trim());
+    if (!Number.isFinite(factor)) {
+      throw new BadRequestException('factor must be a valid number');
+    }
+
+    if (!options.allowOne && factor === 1) {
+      throw new BadRequestException('Factor 1 is reserved for the default UOM');
+    }
+
+    return factor;
+  }
+
+  private async assertUomNameAvailable(
+    stockcardId: number,
+    uomName: string,
+    excludeId?: number,
+  ) {
+    const existing = await this.prisma.uom.findMany({
+      where: { itemId: stockcardId },
+      select: { id: true, uom: true },
+    });
+
+    const duplicate = existing.find(
+      (row) =>
+        row.id !== excludeId &&
+        row.uom.trim().toLowerCase() === uomName.trim().toLowerCase(),
+    );
+
+    if (duplicate) {
+      throw new BadRequestException(
+        `UOM "${uomName}" already exists on this stock card`,
+      );
+    }
+  }
+
+  private async assertUomFactorAvailable(
+    stockcardId: number,
+    factor: number,
+    excludeId?: number,
+  ) {
+    const existing = await this.prisma.uom.findMany({
+      where: { itemId: stockcardId },
+      select: { id: true, factor: true },
+    });
+
+    const duplicate = existing.find((row) => {
+      if (row.id === excludeId || row.factor == null) return false;
+      return Number(row.factor) === factor;
+    });
+
+    if (duplicate) {
+      throw new BadRequestException(
+        `Factor ${factor} is already used by another UOM on this stock card`,
+      );
+    }
+  }
+
   private validatePrices(prices?: CreatePriceDto[]) {
     if (prices === undefined) {
       return;
@@ -380,6 +518,24 @@ export class StockcardService {
           'Each price entry requires a pricegrp string',
         );
       }
+    }
+  }
+
+
+  private async validateSubfieldIds(
+    dto: Partial<CreateStockcardDto> | UpdateTaggingDto,
+  ) {
+    for (const [field, type] of Object.entries(SUBFIELD_TYPE_BY_FK)) {
+      const value = (dto as Record<string, unknown>)[field];
+      if (value === undefined || value === null) {
+        continue;
+      }
+
+      if (typeof value !== 'number' || !Number.isInteger(value)) {
+        throw new BadRequestException(`${field} must be an integer`);
+      }
+
+      await this.subfieldsService.assertExists(type, value);
     }
   }
 
@@ -432,7 +588,8 @@ export class StockcardService {
   ): Prisma.StockcardPriceCreateWithoutItemInput {
     return {
       pricegrp: price.pricegrp,
-      price: price.price,
+      price: price.price ?? null,
+      remarks: price.remarks ?? null,
     };
   }
 
@@ -443,7 +600,37 @@ export class StockcardService {
 
     if (price.pricegrp !== undefined) data.pricegrp = price.pricegrp;
     if (price.price !== undefined) data.price = price.price;
+    if (price.remarks !== undefined) data.remarks = price.remarks;
 
     return data;
   }
+
+  /** Ensure configured price groups exist; overlay any provided prices. */
+  private buildDefaultPriceRows(prices?: CreatePriceDto[]): CreatePriceDto[] {
+    const groups = this.codegenService.getConfig().priceGroups ?? [];
+    const provided = new Map<string, CreatePriceDto>();
+
+    for (const entry of prices ?? []) {
+      if (!entry?.pricegrp) continue;
+      provided.set(entry.pricegrp.trim().toUpperCase(), entry);
+    }
+
+    return groups.map((group) => {
+      const key = group.trim().toUpperCase();
+      const existing = provided.get(key);
+      if (existing) {
+        return {
+          pricegrp: group,
+          price: existing.price ?? 0,
+          remarks: existing.remarks ?? null,
+        };
+      }
+      return {
+        pricegrp: group,
+        price: 0,
+        remarks: null,
+      };
+    });
+  }
 }
+

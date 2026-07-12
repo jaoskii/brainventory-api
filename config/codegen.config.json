@@ -1,0 +1,22 @@
+{
+  "codegenLength": 8,
+  "defaultUom": "PCS",
+  "prefixes": {
+    "stockcard": ["IT", "ST", "PR"],
+    "customer": ["CS", "CL"]
+  },
+  "priceGroups": [
+    "RETAIL",
+    "WHOLESALE",
+    "A",
+    "B",
+    "C",
+    "D",
+    "E",
+    "F",
+    "G",
+    "H",
+    "I",
+    "J"
+  ]
+}
